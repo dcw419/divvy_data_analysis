@@ -1,55 +1,85 @@
-import argparse
-import pandas as pd
 import os
-# 假设你之前写的那些画图函数都保存在 analysis_ops.py 中
-import analysis_ops 
+import sys
+import data_processing
+import analysis_ops
+import algorithm
+# --- 1. 路径配置 (Path Configuration) ---
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(BASE_DIR, "data")
+OUTPUT_DIR = os.path.join(BASE_DIR, "outputs")
 
+# 定义子文件夹路径
+FIGURES_DIR = os.path.join(OUTPUT_DIR, "figures") # 放图片
+TABLES_DIR = os.path.join(OUTPUT_DIR, "tables")   # 放Excel
+CACHE_DIR = os.path.join(OUTPUT_DIR, "cache")     # 放Parquet缓存
+
+# 🚨 开关：强制重新读取数据 (如果新增了ZIP文件，改为 True)
+FORCE_RELOAD = False
+# 2. 配置环境与成本常量
+business_params = {
+        'C_e': 6.0,    'C_c': 0.5,    # 换电/调度边际成本
+        'F_e': 2.0,    'F_c': 0.5,    # 折旧成本
+        'M_e': 5000,   'M_c': 5000,   # 资产规模上限
+        'Q_min': 2000                 # SLA 最低底线
+    }
 def main():
-    # 1. 初始化命令行参数解析器
-    parser = argparse.ArgumentParser(description="🚲 Divvy 共享单车商业分析后端引擎")
+    print("="*50)
+    print("🚴 Shared Bike Strategy Analytics Pipeline 🚴")
+    print("="*50)
     
-    # 2. 定义你可以从外部传入的参数
-    parser.add_argument('--file', type=str, default='202601-divvy-tripdata.csv', help='CSV 数据文件的路径')
-    parser.add_argument('--year', type=int, default=2026, help='要分析的年份 (默认: 2026)')
-    parser.add_argument('--month', type=int, default=1, help='要分析的月份 (默认: 1)')
-    parser.add_argument('--task', type=str, default='all', 
-                        choices=['all', 'bimodal', 'efficiency', 'imbalance', 'ue'], 
-                        help='选择要执行的分析任务 (默认: all)')
-    parser.add_argument('--outdir', type=str, default='./figures', help='图表输出目录')
+    # 2. 自动创建所有必要的文件夹
+    for folder in [OUTPUT_DIR, FIGURES_DIR, TABLES_DIR, CACHE_DIR]:
+        if not os.path.exists(folder):
+            os.makedirs(folder)
+            print(f"📂 Created directory: {folder}")
 
-    # 3. 解析用户在终端输入的命令
-    args = parser.parse_args()
-
-    print("="*50)
-    print(f"🚀 启动后端分析引擎...")
-    print(f"📊 目标数据: {args.year}年 {args.month}月")
-    print(f"执行任务: {args.task.upper()}")
-    print("="*50)
-
-    # 4. 加载数据
-    if not os.path.exists(args.file):
-        print(f"❌ 错误: 找不到数据文件 {args.file}")
+    # 3. ETL 阶段 (Extract, Transform, Load)
+    try:
+        # 注意：我们将 CACHE_DIR 传给数据处理模块，让它把缓存存在专门的地方
+        df_final = data_processing.get_processed_data(DATA_DIR, CACHE_DIR, force_reload=FORCE_RELOAD)
+        
+        if df_final is None:
+            print("❌ ETL failed. No data returned.")
+            return
+            
+    except Exception as e:
+        print(f"❌ Critical Error during Data Processing: {e}")
         return
-        
-    print(f"正在加载数据 {args.file}，请稍候...")
-    df = pd.read_csv(args.file)
-    print(f"✅ 数据加载成功，共 {len(df):,} 条记录。")
 
-    # 5. 根据传入的 --task 参数，选择性调用不同的函数
-    if args.task in ['all', 'bimodal']:
-        analysis_ops.analyze_hourly_bimodal(df, args.outdir)
-        
-    if args.task in ['all', 'efficiency']:
-        analysis_ops.analyze_asset_efficiency(df, args.outdir, target_year=args.year, target_month=args.month)
-        
-    if args.task in ['all', 'imbalance']:
-        analysis_ops.analyze_station_intelligence_strategy(df, args.outdir, target_year=args.year, target_month=args.month)
-        
-    if args.task in ['all', 'ue']:
-        # 这是我们之前写的单体经济模型/毛利分析
-        analysis_ops.analyze_unit_economics_and_margin(df, args.outdir, target_year=args.year, target_month=args.month)
+    # 4. 分析阶段 (Analytics & Visualization)
+    try:
+        # 注意：我们将 OUTPUT_DIR 传进去，具体的子文件夹 (tables/figures) 在分析模块内部拼接
+        # analysis_ops.analyze_user_segmentation(df_final, OUTPUT_DIR)
+        # analysis_ops.analyze_tidal_flow(df_final, OUTPUT_DIR)
+        # analysis_ops.analyze_asset_efficiency(df_final, OUTPUT_DIR)
+        # analysis_ops.analyze_forecast_2026(df_final, OUTPUT_DIR)
+        # analysis_ops.analyze_hourly_bimodal(df_final,OUTPUT_DIR,target_year=2026,target_month=1)
+        # analysis_ops.analyze_station_intelligence_strategy(
+        #     df_final, 
+        #     OUTPUT_DIR, 
+        #     target_year=2026, 
+        #     target_month=1
+        # )
+        # analysis_ops.analyze_winter_strategy(df_final,OUTPUT_DIR,target_year=2026,target_month=1)
+        # analysis_ops.analyze_asset_efficiency_detail(df_final,OUTPUT_DIR,target_year=2026,target_month=1)
+        # analysis_ops.analyze_unit_economics_and_margin(df_final,OUTPUT_DIR,target_year=2026,target_month=1)
+        # analysis_ops.analyze_station_kmeans_clustering(df_final,OUTPUT_DIR,target_year=2026,target_month=1)
+        algorithm.run_pricing_optimization(
+        raw_df=df_final, 
+        current_weather=-10, 
+        current_hour=8, 
+        params=business_params)
+    except Exception as e:
+        import traceback
+        traceback.print_exc() # 打印详细报错信息
+        print(f"❌ Critical Error during Analysis: {e}")
+        return
 
-    print("\n🎉 全部后端任务执行完毕！")
+    print("\n" + "="*50)
+    print(f"🎉 All Done!")
+    print(f"📊 Excel Reports -> {TABLES_DIR}")
+    print(f"📈 Chart Images  -> {FIGURES_DIR}")
+    print("="*50)
 
 if __name__ == "__main__":
     main()
